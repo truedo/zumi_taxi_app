@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0c0e">
+<title>ZUMI TAXI</title>
+<style>
+  :root{
+    --bg:#0b0c0e; --panel:rgba(21,23,27,.94); --panel2:#23262d; --line:rgba(255,255,255,.09);
+    --fg:#f2f3f5; --sub:#a3aab5; --dim:#6b7380;
+    --taxi:#FFD400; --ink:#141414; --route:#3FA9FF; --ok:#30D158; --bad:#FF453A;
+    --road:#4A4A4A; --lane:#FFD400; --mark:#FF2D2D;
+    --r:20px; --sa-b:env(safe-area-inset-bottom); --sa-t:env(safe-area-inset-top);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-feature-settings:"tnum"}
+  button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+
+  /* 지도 (전체 화면) */
+  #stage{position:fixed;inset:0;background:#a9d6e8}
+  #three{position:absolute;inset:0}
+  #three canvas{display:block;width:100%;height:100%}
+  #svg{position:absolute;left:50%;top:50%;width:min(100vw,100vh);height:auto;transform:translate(-50%,-50%);display:none}
+  #stage.d2{background:#101215}
+  #stage.d2 #svg{display:block}
+  #stage.d2 #three{display:none}
+
+  /* 화면 전환 */
+  .screen{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .45s}
+  .screen.show{opacity:1}
+  .screen.show .hit{pointer-events:auto}
+
+  /* 타이틀 */
+  #title{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    background:linear-gradient(180deg,rgba(11,12,14,.0) 0%,rgba(11,12,14,.15) 35%,rgba(11,12,14,.86) 72%,rgba(11,12,14,.97) 100%);
+    padding:0 28px calc(40px + var(--sa-b))}
+  .logo{text-align:center;margin-bottom:34px}
+  .logo .t1{font-size:15px;letter-spacing:.42em;color:var(--sub);font-weight:700;margin-bottom:10px}
+  .logo .t2{font-size:56px;font-weight:900;letter-spacing:.06em;line-height:1}
+  .logo .t2 span{color:var(--taxi)}
+  .logo .t3{margin-top:14px;font-size:15px;color:var(--sub);line-height:1.6}
+  .checker{height:10px;width:180px;margin:18px auto 0;border-radius:3px;
+    background:repeating-conic-gradient(var(--taxi) 0 25%,#141414 0 50%) 0 0/10px 10px}
+  .start{width:min(100%,380px);padding:19px;border-radius:18px;background:var(--taxi);color:var(--ink);font-size:19px;font-weight:800;letter-spacing:.04em;
+    box-shadow:0 10px 30px rgba(255,212,0,.25);transition:transform .1s}
+  .start:active{transform:scale(.98)}
+  .titlemsg{min-height:22px;margin-top:14px;font-size:13.5px;color:var(--sub);text-align:center}
+  .peek{margin-top:6px;font-size:13px;color:var(--dim);text-decoration:underline;text-underline-offset:3px;padding:6px}
+
+  /* 메인: 위쪽 */
+  .top{position:absolute;left:12px;right:12px;top:calc(10px + var(--sa-t));display:flex;flex-direction:column;gap:8px}
+  .bar{display:flex;align-items:center;gap:8px}
+  .brand{flex:1;font-weight:900;letter-spacing:.14em;font-size:17px;text-shadow:0 1px 8px rgba(0,0,0,.35)}
+  .brand span{color:var(--taxi)}
+  .pill{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 12px;font-size:12.5px;color:var(--sub);backdrop-filter:blur(8px)}
+  .pill i{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .pill.on i{background:var(--ok);box-shadow:0 0 0 4px rgba(48,209,88,.18)}
+  .pill.wait i{background:var(--taxi);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .iconbtn{width:40px;height:40px;border-radius:12px;background:var(--panel);border:1px solid var(--line);display:grid;place-items:center;backdrop-filter:blur(8px)}
+  .iconbtn b{display:block;width:16px;height:2px;background:var(--fg);box-shadow:0 -5px 0 var(--fg),0 5px 0 var(--fg)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:12px 14px;backdrop-filter:blur(10px)}
+  .now{display:flex;gap:12px;align-items:center}
+  .chip{flex:none;font-size:12px;font-weight:800;letter-spacing:.04em;padding:6px 10px;border-radius:999px;background:var(--panel2);color:var(--sub)}
+  .chip.run{background:rgba(63,169,255,.18);color:var(--route)}
+  .chip.ready{background:rgba(255,212,0,.16);color:var(--taxi)}
+  .chip.done{background:rgba(48,209,88,.17);color:var(--ok)}
+  .chip.bad{background:rgba(255,69,58,.18);color:var(--bad)}
+  .now .l1{font-size:16.5px;font-weight:800;line-height:1.3}
+  .now .l2{font-size:13px;color:var(--sub);margin-top:2px;white-space:pre-line;line-height:1.4}
+  .trip{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--line);font-size:14px;font-weight:700}
+  .trip .from{color:var(--sub)} .trip .arr{color:var(--dim)} .trip .to{color:var(--taxi)}
+  .trip.hide{display:none}
+  .banner{display:none;align-items:center;gap:10px;background:var(--taxi);color:var(--ink);border-radius:14px;padding:10px 12px;font-weight:800;font-size:14px}
+  .banner.show{display:flex}
+  .banner span{flex:1}
+  .banner button{background:rgba(0,0,0,.12);border-radius:10px;padding:7px 11px;font-weight:800}
+
+  /* 메인: 아래 */
+  .bottom{position:absolute;left:12px;right:12px;bottom:calc(14px + var(--sa-b));display:flex;justify-content:center}
+  .call{width:min(100%,460px);padding:19px;border-radius:18px;background:var(--taxi);color:var(--ink);font-size:19px;font-weight:900;letter-spacing:.06em;
+    box-shadow:0 10px 28px rgba(0,0,0,.35);transition:transform .1s,background .2s}
+  .call:active{transform:scale(.985)}
+  .call.stop{background:var(--bad);color:#fff}
+  .call.off{background:#2b2f36;color:var(--dim)}
+
+  /* 호출 시트 */
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#15171b;border-radius:24px 24px 0 0;border-top:1px solid var(--line);
+    padding:10px 16px calc(16px + var(--sa-b));transform:translateY(105%);transition:transform .35s cubic-bezier(.2,.8,.2,1);z-index:20;max-height:72vh;overflow:auto}
+  .sheet.show{transform:none}
+  .grab{width:40px;height:5px;border-radius:3px;background:#3a3f48;margin:2px auto 10px}
+  .steps{display:flex;gap:6px;margin-bottom:12px}
+  .steps i{flex:1;height:4px;border-radius:2px;background:#2b2f36}
+  .steps i.on{background:var(--taxi)}
+  .sheet h3{margin:0 0 4px;font-size:20px;font-weight:900}
+  .sheet .desc{margin:0 0 14px;font-size:13.5px;color:var(--sub)}
+  .opts{display:flex;flex-direction:column;gap:8px}
+  .opt{display:flex;align-items:center;gap:12px;text-align:left;background:var(--panel2);border:2px solid transparent;border-radius:16px;padding:13px 14px}
+  .opt.on{border-color:var(--taxi);background:rgba(255,212,0,.08)}
+  .opt .ic{flex:none;width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#30343c;font-weight:900;font-size:15px}
+  .opt.on .ic{background:var(--taxi);color:var(--ink)}
+  .opt b{display:block;font-size:15.5px}
+  .opt small{display:block;color:var(--sub);font-size:12.5px;margin-top:2px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .grid button{background:var(--panel2);border:2px solid transparent;border-radius:14px;padding:13px 0;font-size:17px;font-weight:800}
+  .grid button.on{border-color:var(--taxi);background:var(--taxi);color:var(--ink)}
+  .grid button:disabled{opacity:.25}
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+  .seg button{background:var(--panel2);border-radius:12px;padding:11px 0;font-weight:800;border:2px solid transparent}
+  .seg button.on{border-color:var(--fg);background:var(--fg);color:var(--bg)}
+  .sub2{font-size:12.5px;color:var(--sub);margin:14px 2px 0}
+  .actions{display:flex;gap:8px;margin-top:16px}
+  .actions .back{flex:none;padding:16px 18px;border-radius:16px;background:var(--panel2);font-weight:800}
+  .actions .next{flex:1;padding:16px;border-radius:16px;background:var(--taxi);color:var(--ink);font-weight:900;font-size:17px}
+  .actions .next:disabled{background:#2b2f36;color:var(--dim)}
+  .summary{display:flex;align-items:center;gap:10px;background:var(--panel2);border-radius:16px;padding:14px;font-size:17px;font-weight:800}
+  .summary .a{color:var(--sub)} .summary .b{color:var(--taxi)} .summary .x{color:var(--dim)}
+
+  /* 메뉴 */
+  .shade{position:fixed;inset:0;background:rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .3s;z-index:15}
+  .shade.show{opacity:1;pointer-events:auto}
+  .menu{position:fixed;top:0;right:0;bottom:0;width:min(86vw,340px);background:#15171b;border-left:1px solid var(--line);z-index:30;
+    transform:translateX(105%);transition:transform .3s cubic-bezier(.2,.8,.2,1);padding:calc(18px + var(--sa-t)) 16px 20px;overflow:auto}
+  .menu.show{transform:none}
+  .menu h4{margin:18px 4px 8px;font-size:11.5px;letter-spacing:.14em;color:var(--dim);font-weight:700}
+  .menu h4:first-child{margin-top:0}
+  .mitem{display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--panel2);border-radius:14px;padding:14px;margin-bottom:6px;font-weight:700;text-align:left}
+  .mitem small{color:var(--sub);font-weight:500}
+  .pad{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .key{background:var(--panel2);border-radius:12px;padding:11px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:2px}
+  .key b{font-size:14px} .key small{font-size:10px;color:var(--dim);letter-spacing:.08em}
+  #log{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--sub);max-height:160px;overflow:auto;white-space:pre-wrap;background:#0f1013;border-radius:12px;padding:10px}
+
+  .toast{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(.96);background:rgba(11,12,14,.92);border:1px solid var(--line);
+    font-size:15px;font-weight:700;padding:13px 18px;border-radius:16px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;text-align:center;z-index:40;max-width:84%}
+  .toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+  /* 말풍선 */
+  #bubbles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+  #stage.d2 #bubbles{display:none}
+  .bub{position:absolute;left:0;top:0;padding:6px 11px 7px;border-radius:12px;background:#15171b;color:#fff;white-space:nowrap;text-align:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.28);will-change:transform;margin-top:-9px}
+  .bub::after{content:"";position:absolute;left:50%;bottom:-7px;margin-left:-7px;border:7px solid transparent;border-bottom:0;border-top-color:inherit}
+  .bub{border-color:#15171b}
+  .bub b{display:block;font-size:12.5px;font-weight:800;line-height:1.25}
+  .bub small{display:block;font-size:11px;font-weight:600;opacity:.8;line-height:1.3}
+  .bub.taxi{background:var(--taxi);color:var(--ink);border-color:var(--taxi)}
+  .bub.start{background:#fff;color:#141414;border-color:#fff}
+  .bub.start b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+  .bub.dest{background:#15171b;color:var(--taxi);border-color:#15171b}
+  .bub.obs{background:#ff7a00;color:#fff;border-color:#ff7a00}
+  .bub.cam{background:var(--bad);color:#fff;border-color:var(--bad);animation:pulse 1s infinite}
+  @keyframes pulse{50%{filter:brightness(1.25)}}
+
+  /* 장애물 놓기 */
+  .fab{position:absolute;right:14px;bottom:calc(98px + var(--sa-b));width:58px;height:58px;border-radius:18px;background:var(--panel);border:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,.25)}
+  .fab small{font-size:10.5px;font-weight:800;color:var(--sub)}
+  .fab .cone{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:18px solid #ff7a00;position:relative}
+  .fab .cone::after{content:"";position:absolute;left:-12px;top:18px;width:24px;height:3px;background:#ff7a00;border-radius:2px}
+  .obsbar{display:none;flex-direction:column;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:12px;backdrop-filter:blur(10px)}
+  .obsbar.show{display:flex}
+  .obsbar .h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px}
+  .obsbar .h span{flex:1}
+  .obsbar .h small{display:block;font-size:12px;color:var(--sub);font-weight:500;margin-top:2px}
+  .obsbar .h button{background:var(--panel2);border-radius:10px;padding:8px 11px;font-weight:800;font-size:13px}
+  .obsbar .h button.end{background:var(--taxi);color:var(--ink)}
+  .otypes{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .otypes button{background:var(--panel2);border:2px solid transparent;border-radius:12px;padding:9px 0 8px;font-weight:800;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .otypes button.on{border-color:#ff7a00;background:rgba(255,122,0,.14)}
+  .otypes i{width:22px;height:14px;border-radius:3px;display:block}
+
+  /* 2D 지도 */
+  .slot{cursor:pointer} .slot.sel rect{fill:var(--taxi);stroke:var(--taxi)} .slot.sel text{fill:var(--ink)}
+  #route{stroke-dasharray:22 16;animation:flow 1.1s linear infinite} @keyframes flow{to{stroke-dashoffset:-38}}
+  #route,#blk,#robot,.deco{pointer-events:none}
+  .seghit{stroke:transparent;pointer-events:none} .edit .seghit{pointer-events:stroke;stroke:rgba(255,212,0,.22)}
+  .nodehit{fill:transparent;stroke:none;pointer-events:none} .pickstart .nodehit{pointer-events:all;stroke:#fff;stroke-width:6}
+  .pickstart .nodehit.on{stroke:var(--taxi)}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="three"></div>
+  <svg id="svg" viewBox="0 0 1000 1000" aria-label="맵"></svg>
+  <div id="bubbles"></div>
+</div>
+
+<!-- 타이틀 -->
+<section class="screen show" id="title">
+  <div class="logo">
+    <div class="t1">AI AUTONOMOUS</div>
+    <div class="t2">ZUMI <span>TAXI</span></div>
+    <div class="checker"></div>
+    <div class="t3">주미가 마을 구석구석<br>원하는 곳까지 데려다 드려요</div>
+  </div>
+  <button class="start hit" id="btnStart">시작하기</button>
+  <div class="titlemsg" id="titleMsg"></div>
+  <button class="peek hit" id="btnPeek">연결 없이 둘러보기</button>
+</section>
+
+<!-- 메인 -->
+<section class="screen" id="main">
+  <div class="top">
+    <div class="bar">
+      <div class="brand">ZUMI <span>TAXI</span></div>
+      <div class="pill hit" id="pill"><i></i><span id="pillTxt">연결 안 됨</span></div>
+      <button class="iconbtn hit" id="btnMenu" aria-label="메뉴"><b></b></button>
+    </div>
+    <div class="card hit" id="nowCard">
+      <div class="now">
+        <span class="chip" id="chip">대기</span>
+        <div style="min-width:0"><div class="l1" id="l1">택시를 불러 보세요</div><div class="l2" id="l2"></div></div>
+      </div>
+      <div class="trip hide" id="tripRow"><span class="from" id="tFrom"></span><span class="arr">→</span><span class="to" id="tTo"></span></div>
+    </div>
+    <div class="obsbar hit" id="banner">
+      <div class="h"><span>장애물 놓기<small>종류를 고르고 도로를 누르세요 · 다시 누르면 치워요</small></span><button id="btnClear">모두 치우기</button><button class="end" id="btnEditEnd">끝</button></div>
+      <div class="otypes" id="otypes">
+        <button data-t="work"><i style="background:repeating-linear-gradient(45deg,#ff6a00 0 5px,#fff 5px 10px)"></i>공사</button>
+        <button data-t="cone"><i style="background:#ff7a00;clip-path:polygon(50% 0,100% 100%,0 100%)"></i>라바콘</button>
+        <button data-t="person"><i style="background:#4a90d9;border-radius:50% 50% 3px 3px;width:12px"></i>보행자</button>
+        <button data-t="car"><i style="background:#3f7fd1"></i>멈춘 차</button>
+      </div>
+    </div>
+  </div>
+  <button class="fab hit" id="btnObs" aria-label="장애물 놓기"><span class="cone"></span><small>장애물</small></button>
+  <div class="bottom"><button class="call hit" id="btnCall">호출하기</button></div>
+</section>
+
+<!-- 호출 시트 -->
+<div class="sheet" id="sheet">
+  <div class="grab"></div>
+  <div class="steps"><i id="s1"></i><i id="s2"></i><i id="s3"></i></div>
+  <div id="sheetBody"></div>
+</div>
+
+<!-- 메뉴 -->
+<div class="shade" id="shade"></div>
+<div class="menu" id="menu">
+  <h4>지도</h4>
+  <button class="mitem" id="mEdit">장애물 놓기 <small>공사 · 라바콘 · 보행자 · 차</small></button>
+  <button class="mitem" id="mView">지도 보기 <small id="mViewTxt">3D</small></button>
+  <button class="mitem" id="mHome">처음 시점으로</button>
+  <h4>로봇 버튼</h4>
+  <div class="pad">
+    <button class="key" data-k="P"><b>이전</b><small>PREV</small></button>
+    <button class="key" data-k="N"><b>다음</b><small>NEXT</small></button>
+    <button class="key" data-k="E"><b>확인</b><small>ENTER</small></button>
+    <button class="key" data-k="B"><b>뒤로</b><small>BACK</small></button>
+  </div>
+  <h4>연결</h4>
+  <button class="mitem" id="mConn">연결 끊기 <small id="mDev"></small></button>
+  <h4>통신 기록</h4>
+  <div id="log"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== BLE (ble_link.h 와 짝) =====
+const SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e', RX='6e400002-b5a3-f393-e0a9-e50e24dcca9e', TX='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+let dev=null, rx=null, q=Promise.resolve();
+let G=2, st=null, pend=0, edit=false;
+let pickMode='', draft={start:null,head:'N',dest:0}, rode=false; // rode: 한 번 호출했음 (현재 위치 고르기 생김)
+let obsType='work', obsTypes={}, lastB=null, nowText='', rideStart=null; // 장애물 종류 (폰이 기억, 로봇은 막힘만 앎), 말풍선용
+try{obsTypes=JSON.parse(localStorage.getItem('zumiObs')||'{}')}catch(e){}
+const ek=(a,b)=>Math.min(a,b)+'-'+Math.max(a,b);
+const saveObs=()=>{try{localStorage.setItem('zumiObs',JSON.stringify(obsTypes))}catch(e){}};
+const $=id=>document.getElementById(id);
+const NS='http://www.w3.org/2000/svg';
+const log=m=>{const l=$('log');l.textContent=(new Date().toLocaleTimeString()+'  '+m+'\n'+l.textContent).slice(0,5000)};
+const connected=()=>!!(dev&&dev.gatt&&dev.gatt.connected);
+const doneRide=()=>st&&st.status===2&&st.route.length<=1;
+
+// ===== 맵 배치 (node_pathfinder.h 와 같은 번호) =====
+let at=[], pos={};
+const M=150; let S=350, RW=105;
+function build(g){
+  G=g; at=Array.from({length:g+1},()=>Array(g+1).fill(0)); pos={};
+  let id=1;
+  for(let c=0;c<=g;c++)at[0][c]=id++;
+  for(let r=1;r<=g;r++)at[r][g]=id++;
+  for(let c=g-1;c>=0;c--)at[g][c]=id++;
+  for(let r=g-1;r>=1;r--)at[r][0]=id++;
+  for(let r=1;r<g;r++)for(let c=1;c<g;c++)at[r][c]=id++;
+  for(let r=0;r<=g;r++)for(let c=0;c<=g;c++)pos[at[r][c]]={c,r};
+  S=(1000-2*M)/g; RW=Math.min(110,S*0.30);
+  draw2D();
+}
+const nNodes=()=>(G+1)*(G+1);
+
+// ===== 2D 지도 (3D가 안 될 때) =====
+const xy=n=>{const p=pos[n];return p?[M+p.c*S,M+p.r*S]:[500,500]};
+function el(tag,attr,parent){const e=document.createElementNS(NS,tag);for(const k in attr)e.setAttribute(k,attr[k]);if(parent)parent.appendChild(e);return e}
+function line(p,a,b,w,c){const [x1,y1]=xy(a),[x2,y2]=xy(b);el('line',{x1,y1,x2,y2,stroke:c,'stroke-width':w,'stroke-linecap':'square'},p)}
+function draw2D(){
+  const svg=$('svg'); svg.innerHTML='';
+  const segs=[]; for(let r=0;r<=G;r++)for(let c=0;c<=G;c++){if(c<G)segs.push([at[r][c],at[r][c+1]]);if(r<G)segs.push([at[r][c],at[r+1][c]])}
+  const roads=el('g',{},svg);
+  segs.forEach(([a,b])=>line(roads,a,b,RW,'var(--lane)')); segs.forEach(([a,b])=>line(roads,a,b,RW-18,'var(--road)'));
+  el('g',{id:'blk'},svg);
+  const hits=el('g',{},svg);
+  segs.forEach(([a,b])=>{const [x1,y1]=xy(a),[x2,y2]=xy(b),k=RW*0.5,dx=Math.sign(x2-x1)*k,dy=Math.sign(y2-y1)*k;
+    el('line',{class:'seghit',x1:x1+dx,y1:y1+dy,x2:x2-dx,y2:y2-dy,'stroke-width':RW},hits).addEventListener('click',()=>toggleRoad(a,b))});
+  el('path',{id:'route',fill:'none',stroke:'var(--route)','stroke-width':16,'stroke-linecap':'round','stroke-linejoin':'round'},svg);
+  const [bx,by]=xy(at[G][G]),[,ny]=xy(at[G-1][G]); el('rect',{class:'deco',x:bx-RW/2+9,y:by+(ny-by)*.35-5,width:RW-18,height:10,fill:'#fff'},svg);
+  for(const n in pos){const [x,y]=xy(+n),k=RW*.42,t=RW*.13;
+    el('rect',{class:'deco',x:x-k,y:y-t/2,width:2*k,height:t,fill:'var(--mark)'},svg);el('rect',{class:'deco',x:x-t/2,y:y-k,width:t,height:2*k,fill:'var(--mark)'},svg);
+    el('circle',{class:'nodehit','data-n':n,cx:x,cy:y,r:RW*.55},svg).addEventListener('click',()=>onMapNode(+n));}
+  for(let n=1;n<=4*G;n++){const p=pos[n],[x,y]=xy(n),d=RW/2+58;let ox=0,oy=0;if(p.r===0)oy=-d;if(p.r===G)oy=d;if(p.c===0)ox=-d;if(p.c===G)ox=d;if(ox&&oy){ox*=.78;oy*=.78}
+    const g=el('g',{class:'slot','data-n':n},svg);el('rect',{x:x+ox-37,y:y+oy-37,width:74,height:74,rx:16,fill:'#1d2026',stroke:'#3a404b','stroke-width':3},g);
+    el('text',{x:x+ox,y:y+oy+13,fill:'#f2f3f5','font-size':38,'font-weight':800,'text-anchor':'middle'},g).textContent=n;g.addEventListener('click',()=>onMapPin(n));}
+  const rb=el('g',{id:'robot',style:'transform:translate(-200px,-200px);transition:transform .32s linear'},svg),car=el('g',{id:'car'},rb);
+  el('rect',{x:-26,y:-20,width:52,height:40,rx:11,fill:'#FFC81A',stroke:'#0b0c0e','stroke-width':4},car);el('circle',{cx:24,cy:-11,r:4,fill:'#fff'},car);el('circle',{cx:24,cy:11,r:4,fill:'#fff'},car);
+}
+function render2D(){
+  const svg=$('svg'), bk=$('blk'); if(!bk)return; bk.innerHTML='';
+  svg.classList.toggle('edit',edit); svg.classList.toggle('pickstart',pickMode==='start');
+  (st?.blk||[]).forEach(([a,b])=>{const [x1,y1]=xy(a),[x2,y2]=xy(b),mx=(x1+x2)/2,my=(y1+y2)/2,k=22;
+    el('line',{x1,y1,x2,y2,stroke:'rgba(255,69,58,.45)','stroke-width':RW-18},bk);
+    el('path',{d:`M${mx-k} ${my-k}L${mx+k} ${my+k}M${mx+k} ${my-k}L${mx-k} ${my+k}`,stroke:'#fff','stroke-width':8,'stroke-linecap':'round'},bk)});
+  let rp=null; if(st&&pos[st.next]){const [x2,y2]=xy(st.next); if(!st.prev||st.status===2)rp=[x2,y2]; else{const [x1,y1]=xy(st.prev),t=st.prog/100;rp=[x1+(x2-x1)*t,y1+(y2-y1)*t]}}
+  const has=st&&st.dest&&rp;
+  $('route').setAttribute('d',has&&st.route.length&&!doneRide()&&st.status!==3?'M'+rp.join(' ')+st.route.map(n=>'L'+xy(n).join(' ')).join(''):'');
+  $('robot').style.transform=has?`translate(${rp[0]}px,${rp[1]}px)`:'translate(-200px,-200px)';
+  if(has)$('car').setAttribute('transform',`rotate(${[-90,0,90,180][st.hd]||0})`);
+  document.querySelectorAll('.slot').forEach(s=>{const n=+s.dataset.n;s.classList.toggle('sel',pickMode?draft.dest===n:(st&&st.dest===n&&!doneRide()))});
+  document.querySelectorAll('.nodehit').forEach(c=>c.classList.toggle('on',draft.start===+c.dataset.n));
+}
+
+// ===== 화면 갱신 =====
+function render(){
+  render2D();
+  if(window.M3&&M3.ok)M3.update();
+  ui();
+}
+function canStart(){return st&&!st.run&&st.dest&&st.ui===0&&st.status!==3&&st.status!==4&&(st.status===1||st.route.length>1)}
+function ui(){
+  // 상태 카드
+  const chip=$('chip'); chip.className='chip'; let c='대기';
+  if(!connected()){c=dev?'연결 끊김':'둘러보기'}
+  else if(st){
+    if(st.ui>0)c='로봇에서 등록 중';
+    else if(st.run){c='운행 중';chip.classList.add('run')}
+    else if(doneRide()){c='도착';chip.classList.add('done')}
+    else if(st.status===3){c='갈 길 없음';chip.classList.add('bad')}
+    else if(st.status===4){c='위치 잃음';chip.classList.add('bad')}
+    else if(canStart()){c='배차 완료';chip.classList.add('ready')}
+  }
+  chip.textContent=c;
+  const tr=$('tripRow');
+  if(st&&st.dest&&!doneRide()){tr.classList.remove('hide');$('tFrom').textContent=tripFrom||'출발';$('tTo').textContent=st.dest+'번'}
+  else tr.classList.add('hide');
+  // 큰 버튼
+  const b=$('btnCall'); b.className='call hit';
+  if(!connected()){b.textContent=dev?'다시 연결':'로봇 연결';}
+  else if(st&&st.run){b.textContent='정지';b.classList.add('stop')}
+  else if(st&&st.ui>0){b.textContent='로봇에서 등록 중';b.classList.add('off')}
+  else b.textContent='호출하기';
+  $('banner').classList.toggle('show',edit);
+  $('btnCall').parentElement.style.display=edit||sheetOpen?'none':'flex';
+  $('btnObs').style.display=edit||sheetOpen||!connected()||(st&&st.run)?'none':'flex';
+  document.querySelectorAll('#otypes button').forEach(b=>b.classList.toggle('on',b.dataset.t===obsType));
+  // 메뉴
+  $('mConn').firstChild.textContent=connected()?'연결 끊기 ':'연결하기 ';
+  $('mDev').textContent=connected()?dev.name:'';
+  $('mEdit').firstChild.textContent=edit?'장애물 놓기 끝내기 ':'장애물 놓기 ';
+  pads();
+}
+function setNow(text){
+  const ls=(text||'').split('|').filter(l=>l&&!/^[SLRU*]+$/.test(l)&&!/^X[\d ]+$/.test(l));
+  $('l1').textContent=ls[0]||''; $('l2').textContent=ls.slice(1).join('\n'); nowText=ls[0]||'';
+}
+let toastT=0;
+function toast(t){const e=$('toast');e.innerHTML=t.split('|').map((l,i)=>i?`<div style="font-size:13px;color:var(--sub);font-weight:500;margin-top:4px">${l}</div>`:l).join('');
+  e.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>e.classList.remove('show'),2000)}
+// 지도 위아래를 덮는 높이 → 3D 지도 가운데 맞춤
+function pads(){if(!(window.M3&&M3.ok))return;const top=$('main').classList.contains('show')?(edit?$('banner'):$('nowCard')).getBoundingClientRect().bottom+8:0;
+  const bot=sheetOpen?$('sheet').offsetHeight:($('main').classList.contains('show')?96:0);
+  if(Math.abs(M3.padTop-top)>4||Math.abs(M3.padBottom-bot)>4){M3.padTop=top;M3.padBottom=bot;M3.fit()}}
+
+// ===== 상태 받기 =====
+// S,grid,status,next,prev,heading,dest,prog,run,ph,ph_node,ui,route,blk,ublk;text
+let wasRun=false, tripFrom='';
+function onLine(s){
+  if(s.startsWith('R,')){
+    log('답 '+s);
+    if(s.startsWith('R,B,')||s.startsWith('R,C,')){const c=+s[4];
+      if(s[2]==='B'&&lastB){if(c===1)obsTypes[lastB.k]=lastB.t;else if(c===2)delete obsTypes[lastB.k];saveObs();lastB=null}
+      if(s[2]==='C'&&(c===1||c===2)){obsTypes={};saveObs()}
+      const nm={work:'공사 구간',cone:'라바콘',person:'보행자',car:'멈춘 차'};
+      toast(s[2]==='C'?(c===1||c===2?'장애물을 모두 치웠어요':c===4?'지금은 바꿀 수 없어요':'치울 수 없어요')
+        :['없는 구간이에요',`${nm[obsType]||'장애물'}을 놓았어요|택시가 돌아서 가요`,'장애물을 치웠어요','여기를 막으면 갈 길이 없어요','지금은 바꿀 수 없어요|택시가 달리는 구간이거나 교차로 근처예요'][c]||'');
+      render()}
+    if(s.startsWith('R,G,')&&waitG){const f=waitG;waitG=null;f(s[4]==='1')}
+    return;
+  }
+  if(!s.startsWith('S,'))return log(s);
+  const i=s.indexOf(';'),h=(i<0?s:s.slice(0,i)).split(','),text=i<0?'':s.slice(i+1);
+  const g=+h[1]; if(g&&g!==G)build(g);
+  st={status:+h[2],next:+h[3],prev:+h[4],hd:+h[5],dest:+h[6],prog:+h[7],run:h[8]==='1',ph:+h[9],phn:+h[10],ui:+h[11],
+      route:h[12]?h[12].split('-').map(Number):[],blk:h[13]?h[13].split('.').map(e=>e.split('-').map(Number)):[],
+      ublk:h[14]?h[14].split('.').map(e=>e.split('-').map(Number)):[]};
+  if(!st.dest&&st.ui===0)setNow('택시를 불러 보세요|아래 호출하기를 누르면 돼요'); else setNow(text);
+  {const live=new Set(st.ublk.map(([a,b])=>ek(a,b)));let ch=false;for(const k in obsTypes)if(!live.has(k)){delete obsTypes[k];ch=true}if(ch)saveObs()} // 로봇에서 풀린 것은 지움
+  if(wasRun&&!st.run&&doneRide())toast(`${st.dest}번에 도착했어요|이용해 주셔서 감사합니다`);
+  wasRun=st.run;
+  if(st.status===2&&st.dest)rode=true;
+  render();
+}
+
+// ===== 보내기 =====
+let waitG=null;
+function send(cmd){
+  if(!rx)return Promise.resolve();
+  return q=q.then(()=>rx.writeValueWithoutResponse(new TextEncoder().encode(cmd))).then(()=>log('보냄 '+cmd)).catch(e=>log('보내기 오류 '+e.message));
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function sendG(cmd){return new Promise(res=>{waitG=res;send(cmd);setTimeout(()=>{if(waitG===res){waitG=null;res(false)}},2500)})}
+function toggleRoad(a,b){if(!rx||!edit)return;lastB={k:ek(a,b),t:obsType};send(`B,${a},${b}`)}
+
+// ===== 호출 흐름: 택시 위치 → 목적지 → 확인 =====
+let sheetOpen=false, step=0;
+const HDK={N:'북',E:'동',S:'남',W:'서'};
+function hereAvail(){return !!(st&&st.status===2&&st.dest)}
+function startLabel(){
+  if(draft.start==='A')return `현재 위치 · ${st?st.next:''}번`;
+  if(draft.start===0)return '택시 승강장';
+  if(typeof draft.start==='number')return `${draft.start}번 · ${HDK[draft.head]}쪽 보고`;
+  return '';
+}
+function openCall(dest){
+  if(!connected()){connect();return}
+  if(st&&st.run)return;
+  if(st&&st.ui>0){toast('로봇에서 등록 중이에요|로봇의 뒤로 버튼으로 나와 주세요');return}
+  draft={start:hereAvail()?'A':0,head:'N',dest:dest||0};
+  step=dest&&hereAvail()?2:1; sheetOpen=true; drawSheet();
+  $('sheet').classList.add('show'); render(); setTimeout(pads,380);
+}
+function closeCall(){sheetOpen=false;pickMode='';$('sheet').classList.remove('show');render();setTimeout(pads,380)}
+function drawSheet(){
+  ['s1','s2','s3'].forEach((id,i)=>$(id).classList.toggle('on',i<step));
+  const b=$('sheetBody'); let h='';
+  if(step===1){
+    pickMode='start';
+    h=`<h3>택시가 지금 어디 있나요?</h3><p class="desc">로봇을 놓은 자리를 골라 주세요</p><div class="opts">`;
+    if(hereAvail())h+=opt('A','현재 위치',`${st.next}번 · 방금 도착한 자리`,st.next);
+    h+=opt('0','택시 승강장','처음 출발하는 자리','P');
+    h+=opt('node','다른 곳',typeof draft.start==='number'&&draft.start>0?`${draft.start}번 · ${HDK[draft.head]}쪽 보고`:'지도에서 노드를 누르세요','+');
+    h+='</div>';
+    if(typeof draft.start==='number'&&draft.start>0){
+      h+=`<div class="sub2">택시 앞이 보는 방향</div><div class="seg">${['N','E','S','W'].map(d=>`<button data-h="${d}" class="${draft.head===d?'on':''}">${HDK[d]} ${'↑→↓←'['NESW'.indexOf(d)]}</button>`).join('')}</div>`;
+    }
+    h+=`<div class="actions"><button class="back" data-a="close">닫기</button><button class="next" data-a="next" ${draft.start===null||draft.start==='node'?'disabled':''}>다음</button></div>`;
+  }else if(step===2){
+    pickMode='dest';
+    const sNode=draft.start==='A'?st.next:(typeof draft.start==='number'&&draft.start>0?draft.start:-1);
+    h=`<h3>어디로 갈까요?</h3><p class="desc">지도의 정류장 핀이나 번호를 누르세요</p><div class="grid">`;
+    for(let n=1;n<=4*G;n++)h+=`<button data-d="${n}" class="${draft.dest===n?'on':''}" ${n===sNode?'disabled':''}>${n}</button>`;
+    h+=`</div><div class="actions"><button class="back" data-a="prev">이전</button><button class="next" data-a="next" ${draft.dest?'':'disabled'}>다음</button></div>`;
+  }else{
+    pickMode='dest';
+    h=`<h3>이대로 부를까요?</h3><p class="desc">호출하면 택시가 바로 출발해요</p>
+      <div class="summary"><span class="a">${startLabel()}</span><span class="x">→</span><span class="b">${draft.dest}번</span></div>
+      <div class="actions"><button class="back" data-a="prev">이전</button><button class="next" data-a="go">호출하기</button></div>`;
+  }
+  b.innerHTML=h;
+  b.querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{const v=e.dataset.o;draft.start=v==='A'?'A':v==='0'?0:(typeof draft.start==='number'&&draft.start>0?draft.start:'node');drawSheet();render()});
+  b.querySelectorAll('[data-h]').forEach(e=>e.onclick=()=>{draft.head=e.dataset.h;drawSheet();render()});
+  b.querySelectorAll('[data-d]').forEach(e=>e.onclick=()=>{draft.dest=+e.dataset.d;drawSheet();render()});
+  b.querySelectorAll('[data-a]').forEach(e=>e.onclick=()=>{const a=e.dataset.a;
+    if(a==='close')closeCall(); else if(a==='prev'){step--;drawSheet();render()} else if(a==='next'){step++;drawSheet();render()} else if(a==='go')go()});
+  setTimeout(pads,30);
+}
+function opt(v,t,s,ic){
+  const on=(v==='A'&&draft.start==='A')||(v==='0'&&draft.start===0)||(v==='node'&&(draft.start==='node'||(typeof draft.start==='number'&&draft.start>0)));
+  return `<button class="opt ${on?'on':''}" data-o="${v}"><span class="ic">${ic}</span><span><b>${t}</b><small>${s}</small></span></button>`;
+}
+window.onMapNode=n=>{if(pickMode!=='start')return;draft.start=n;drawSheet();render()};
+window.onMapPin=n=>{
+  if(pickMode==='dest'){const sNode=draft.start==='A'?st.next:draft.start;if(n===sNode)return;draft.dest=n;if(step===2){step=3}drawSheet();render();return}
+  if(!sheetOpen&&connected()&&!(st&&st.run))openCall(n);
+};
+async function go(){
+  const s=draft.start==='A'?'A':draft.start===0?'0':String(draft.start), d=draft.dest;
+  tripFrom=draft.start==='A'?`${st.next}번`:draft.start===0?'승강장':`${draft.start}번`;
+  rideStart=draft.start==='A'?{n:st.next}:draft.start===0?{}:{n:draft.start};
+  closeCall(); pend=d; render();
+  const ok=await sendG(`G,${s},${draft.head},${d}`);
+  pend=0;
+  if(!ok){toast('호출하지 못했어요|로봇이 대기 화면인지 확인해 주세요');render();return}
+  rode=true; render();
+  await sleep(1100);              // 로봇이 얼굴 화면이면 지도 화면으로 넘어가는 시간
+  if(canStart())await send('K,E'); // 출발 (= 로봇 ENTER)
+  await sleep(2500);
+  if(!st?.run&&canStart()){log('출발 다시');send('K,E')} // 씹혔으면 한 번 더
+}
+
+// ===== 버튼 =====
+$('btnCall').onclick=()=>{
+  if(!connected())return connect();
+  if(st&&st.run)return send('X');
+  openCall(0);
+};
+$('btnMenu').onclick=()=>{$('menu').classList.add('show');$('shade').classList.add('show')};
+$('shade').onclick=()=>{$('menu').classList.remove('show');$('shade').classList.remove('show')};
+const closeMenu=()=>$('shade').onclick();
+$('mEdit').onclick=()=>{closeMenu();setEdit(!edit)};
+$('btnEditEnd').onclick=()=>setEdit(false);
+$('btnObs').onclick=()=>setEdit(true);
+document.querySelectorAll('#otypes button').forEach(b=>b.onclick=()=>{obsType=b.dataset.t;ui()});
+$('btnClear').onclick=()=>send('C');
+function setEdit(v){if(v&&!connected()){toast('먼저 로봇에 연결해 주세요');return}edit=v;if(v&&sheetOpen)closeCall();render();setTimeout(pads,50)}
+$('mView').onclick=()=>{view3d($('stage').classList.contains('d2'));closeMenu()};
+$('mHome').onclick=()=>{if(window.M3&&M3.ok)M3.home();closeMenu()};
+$('mConn').onclick=()=>{closeMenu();if(connected()){dev.gatt.disconnect()}else connect()};
+document.querySelectorAll('.key').forEach(b=>b.onclick=()=>send('K,'+b.dataset.k));
+$('pill').onclick=()=>{if(!connected())connect()};
+
+// ===== 화면 전환 =====
+function showMain(){
+  $('title').classList.remove('show'); $('main').classList.add('show');
+  if(window.M3&&M3.ok)M3.setTitle(false);
+  render(); setTimeout(pads,60);
+}
+function showTitle(){
+  $('main').classList.remove('show'); $('title').classList.add('show');
+  if(window.M3&&M3.ok){M3.padTop=0;M3.padBottom=0;M3.setTitle(true)}
+}
+$('btnStart').onclick=async()=>{ if(await connect())showMain(); };
+$('btnPeek').onclick=()=>showMain();
+
+// ===== 연결 =====
+function pill(t,cls){const p=$('pill');p.className='pill hit'+(cls?' '+cls:'');$('pillTxt').textContent=t}
+async function connect(){
+  if(!navigator.bluetooth){$('titleMsg').textContent='이 브라우저는 블루투스를 쓸 수 없어요. 안드로이드나 PC의 크롬에서 열어 주세요.';toast('블루투스를 쓸 수 없는 브라우저예요|안드로이드·PC 크롬에서 열어 주세요');return false}
+  try{
+    $('titleMsg').textContent='주미 택시를 찾고 있어요…';
+    const d=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'ZUMI'}],optionalServices:[SVC]});
+    dev=d;
+    dev.addEventListener('gattserverdisconnected',()=>{rx=null;pill('연결 끊김');toast('로봇과 연결이 끊겼어요');render()});
+    pill('연결 중','wait'); $('titleMsg').textContent=dev.name+'에 연결하는 중…';
+    const svc=await (await dev.gatt.connect()).getPrimaryService(SVC);
+    rx=await svc.getCharacteristic(RX);
+    const tx=await svc.getCharacteristic(TX);
+    tx.addEventListener('characteristicvaluechanged',e=>onLine(new TextDecoder().decode(e.target.value)));
+    await tx.startNotifications();
+    pill(dev.name,'on'); $('titleMsg').textContent=''; send('?'); render();
+    return true;
+  }catch(e){
+    pill('연결 안 됨'); $('titleMsg').textContent=e.name==='NotFoundError'?'연결을 취소했어요. 다시 눌러 주세요.':'연결하지 못했어요 ('+e.message+')';
+    log('오류 '+e.message); render(); return false;
+  }
+}
+
+// ===== 3D 지도 (three.min.js + map3d.js, 없으면 2D) =====
+function view3d(on){
+  if(on&&!(window.M3&&M3.ok))on=false;
+  $('stage').classList.toggle('d2',!on); $('mViewTxt').textContent=on?'3D':'2D';
+  try{localStorage.setItem('zumi3d',on?'1':'0')}catch(e){}
+  if(on){M3.fit();render()}
+}
+function load(src){return new Promise((ok,no)=>{const e=document.createElement('script');e.src=src;e.onload=ok;e.onerror=no;document.head.appendChild(e)})}
+build(2);
+$('stage').classList.add('d2');
+(async()=>{
+  try{ if(!window.THREE){ try{await load('three.min.js')}catch(e){await load('https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js')} }
+       await load('map3d.js'); }catch(e){log('3D 지도 없음 (2D로 봄)');return}
+  if(!(window.M3&&M3.ok))return;
+  let pref='1'; try{pref=localStorage.getItem('zumi3d')??'1'}catch(e){}
+  view3d(pref==='1');
+  M3.setTitle($('title').classList.contains('show'));
+  render();
+})();
+window.addEventListener('resize',()=>setTimeout(pads,50));
+</script>
+</body>
+</html>
